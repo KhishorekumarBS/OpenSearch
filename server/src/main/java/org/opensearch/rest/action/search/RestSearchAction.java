@@ -50,6 +50,7 @@ import org.opensearch.rest.action.RestCancellableNodeClient;
 import org.opensearch.rest.action.RestStatusToXContentListener;
 import org.opensearch.search.Scroll;
 import org.opensearch.search.SearchService;
+import org.opensearch.search.UnsupportedQueryDSLValidator;
 import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.search.fetch.StoredFieldsContext;
 import org.opensearch.search.fetch.subphase.FetchSourceContext;
@@ -224,6 +225,9 @@ public class RestSearchAction extends BaseRestHandler {
         }
 
         searchRequest.setCancelAfterTimeInterval(request.paramAsTime("cancel_after_time_interval", null));
+
+        // Validate for unsupported DSL features
+        UnsupportedQueryDSLValidator.validate(searchRequest);
     }
 
     /**

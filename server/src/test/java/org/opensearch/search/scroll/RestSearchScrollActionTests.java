@@ -32,24 +32,14 @@
 
 package org.opensearch.search.scroll;
 
-import org.opensearch.action.search.SearchResponse;
-import org.opensearch.action.search.SearchScrollRequest;
-import org.opensearch.common.SetOnce;
-import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.common.bytes.BytesArray;
 import org.opensearch.core.xcontent.MediaTypeRegistry;
 import org.opensearch.rest.RestRequest;
 import org.opensearch.rest.action.search.RestSearchScrollAction;
 import org.opensearch.test.OpenSearchTestCase;
-import org.opensearch.test.client.NoOpNodeClient;
-import org.opensearch.test.rest.FakeRestChannel;
 import org.opensearch.test.rest.FakeRestRequest;
-import org.opensearch.transport.client.node.NodeClient;
 
-import java.util.HashMap;
-import java.util.Map;
-
-import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.containsString;
 
 public class RestSearchScrollActionTests extends OpenSearchTestCase {
 
@@ -60,30 +50,16 @@ public class RestSearchScrollActionTests extends OpenSearchTestCase {
             MediaTypeRegistry.JSON
         ).build();
         Exception e = expectThrows(IllegalArgumentException.class, () -> action.prepareRequest(request, null));
-        assertThat(e.getMessage(), equalTo("Failed to parse request body"));
+        assertThat(e.getMessage(), containsString("Unsupported DSL feature: [scroll]"));
     }
 
     public void testBodyParamsOverrideQueryStringParams() throws Exception {
-        SetOnce<Boolean> scrollCalled = new SetOnce<>();
-        try (NodeClient nodeClient = new NoOpNodeClient(this.getTestName()) {
-            @Override
-            public void searchScroll(SearchScrollRequest request, ActionListener<SearchResponse> listener) {
-                scrollCalled.set(true);
-                assertThat(request.scrollId(), equalTo("BODY"));
-                assertThat(request.scroll().keepAlive().getStringRep(), equalTo("1m"));
-            }
-        }) {
-            RestSearchScrollAction action = new RestSearchScrollAction();
-            Map<String, String> params = new HashMap<>();
-            params.put("scroll_id", "QUERY_STRING");
-            params.put("scroll", "1000m");
-            RestRequest request = new FakeRestRequest.Builder(xContentRegistry()).withParams(params)
-                .withContent(new BytesArray("{\"scroll_id\":\"BODY\", \"scroll\":\"1m\"}"), MediaTypeRegistry.JSON)
-                .build();
-            FakeRestChannel channel = new FakeRestChannel(request, false, 0);
-            action.handleRequest(request, channel, nodeClient);
-
-            assertThat(scrollCalled.get(), equalTo(true));
-        }
+        RestSearchScrollAction action = new RestSearchScrollAction();
+        RestRequest request = new FakeRestRequest.Builder(xContentRegistry()).withContent(
+            new BytesArray("{\"scroll_id\":\"BODY\", \"scroll\":\"1m\"}"),
+            MediaTypeRegistry.JSON
+        ).build();
+        Exception e = expectThrows(IllegalArgumentException.class, () -> action.prepareRequest(request, null));
+        assertThat(e.getMessage(), containsString("Unsupported DSL feature: [scroll]"));
     }
 }

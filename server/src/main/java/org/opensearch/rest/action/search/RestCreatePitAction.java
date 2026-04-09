@@ -38,15 +38,7 @@ public class RestCreatePitAction extends BaseRestHandler {
 
     @Override
     public RestChannelConsumer prepareRequest(RestRequest request, NodeClient client) throws IOException {
-        boolean allowPartialPitCreation = request.paramAsBoolean(ALLOW_PARTIAL_PIT_CREATION, true);
-        String[] indices = Strings.splitStringByCommaToArray(request.param("index"));
-        TimeValue keepAlive = request.paramAsTime(KEEP_ALIVE, null);
-        CreatePitRequest createPitRequest = new CreatePitRequest(keepAlive, allowPartialPitCreation, indices);
-        createPitRequest.setIndicesOptions(IndicesOptions.fromRequest(request, createPitRequest.indicesOptions()));
-        createPitRequest.setPreference(request.param("preference"));
-        createPitRequest.setRouting(request.param("routing"));
-
-        return channel -> client.createPit(createPitRequest, new RestStatusToXContentListener<>(channel));
+        throw new IllegalArgumentException("Unsupported DSL feature: [point_in_time]");
     }
 
     @Override

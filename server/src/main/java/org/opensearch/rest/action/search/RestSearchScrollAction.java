@@ -77,25 +77,7 @@ public class RestSearchScrollAction extends BaseRestHandler {
 
     @Override
     public RestChannelConsumer prepareRequest(final RestRequest request, final NodeClient client) throws IOException {
-        String scrollId = request.param("scroll_id");
-        SearchScrollRequest searchScrollRequest = new SearchScrollRequest();
-        searchScrollRequest.scrollId(scrollId);
-        String scroll = request.param("scroll");
-        if (scroll != null) {
-            searchScrollRequest.scroll(new Scroll(parseTimeValue(scroll, null, "scroll")));
-        }
-
-        request.withContentOrSourceParamParserOrNull(xContentParser -> {
-            if (xContentParser != null) {
-                // NOTE: if rest request with xcontent body has request parameters, values parsed from request body have the precedence
-                try {
-                    searchScrollRequest.fromXContent(xContentParser);
-                } catch (IOException e) {
-                    throw new IllegalArgumentException("Failed to parse request body", e);
-                }
-            }
-        });
-        return channel -> client.searchScroll(searchScrollRequest, new RestStatusToXContentListener<>(channel));
+        throw new IllegalArgumentException("Unsupported DSL feature: [scroll]");
     }
 
     @Override
