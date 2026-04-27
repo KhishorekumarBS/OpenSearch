@@ -12,6 +12,8 @@ import org.apache.lucene.tests.util.LuceneTestCase.AwaitsFix;
 import org.opensearch.search.aggregations.AggregationBuilders;
 import org.opensearch.search.aggregations.BucketOrder;
 import org.opensearch.search.aggregations.bucket.terms.TermsAggregationBuilder;
+import org.opensearch.search.aggregations.metrics.PercentileRanksAggregationBuilder;
+import org.opensearch.search.aggregations.metrics.PercentilesAggregationBuilder;
 import org.opensearch.search.builder.SearchSourceBuilder;
 
 /**
@@ -119,6 +121,57 @@ public class DslAggregationIT extends DslIntegTestBase {
                         new TermsAggregationBuilder("by_brand").field("brand")
                             .order(BucketOrder.aggregation("avg_price", false))
                             .subAggregation(AggregationBuilders.avg("avg_price").field("price"))
+                    )
+            )
+        );
+    }
+
+    public void testPercentilesDefaultPercents() {
+        createTestIndex();
+        assertOk(search(new SearchSourceBuilder().size(0).aggregation(new PercentilesAggregationBuilder("pct_price").field("price"))));
+    }
+
+    public void testPercentilesCustomPercents() {
+        createTestIndex();
+        assertOk(
+            search(
+                new SearchSourceBuilder().size(0)
+                    .aggregation(new PercentilesAggregationBuilder("pct_price").field("price").percentiles(10, 50, 90))
+            )
+        );
+    }
+
+    public void testPercentilesWithTermsBucket() {
+        createTestIndex();
+        assertOk(
+            search(
+                new SearchSourceBuilder().size(0)
+                    .aggregation(
+                        new TermsAggregationBuilder("by_brand").field("brand")
+                            .subAggregation(new PercentilesAggregationBuilder("pct_price").field("price"))
+                    )
+            )
+        );
+    }
+
+    public void testPercentileRanks() {
+        createTestIndex();
+        assertOk(
+            search(
+                new SearchSourceBuilder().size(0)
+                    .aggregation(new PercentileRanksAggregationBuilder("rank_price", new double[] { 500, 1000, 1500 }).field("price"))
+            )
+        );
+    }
+
+    public void testPercentileRanksWithTermsBucket() {
+        createTestIndex();
+        assertOk(
+            search(
+                new SearchSourceBuilder().size(0)
+                    .aggregation(
+                        new TermsAggregationBuilder("by_brand").field("brand")
+                            .subAggregation(new PercentileRanksAggregationBuilder("rank_price", new double[] { 500, 1000 }).field("price"))
                     )
             )
         );

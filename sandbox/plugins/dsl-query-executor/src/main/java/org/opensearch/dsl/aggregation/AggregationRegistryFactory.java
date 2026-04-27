@@ -12,6 +12,8 @@ import org.opensearch.dsl.aggregation.bucket.TermsBucketTranslator;
 import org.opensearch.dsl.aggregation.metric.AvgMetricTranslator;
 import org.opensearch.dsl.aggregation.metric.MaxMetricTranslator;
 import org.opensearch.dsl.aggregation.metric.MinMetricTranslator;
+import org.opensearch.dsl.aggregation.metric.PercentileRanksMetricTranslator;
+import org.opensearch.dsl.aggregation.metric.PercentilesMetricTranslator;
 import org.opensearch.dsl.aggregation.metric.SumMetricTranslator;
 
 /**
@@ -28,6 +30,8 @@ public class AggregationRegistryFactory {
         registry.register(new SumMetricTranslator());
         registry.register(new MinMetricTranslator());
         registry.register(new MaxMetricTranslator());
+        registry.register(new PercentilesMetricTranslator());
+        registry.register(new PercentileRanksMetricTranslator());
         registry.register(new TermsBucketTranslator());
         // TODO: add other aggregation translators
         return registry;

@@ -18,11 +18,12 @@ import org.opensearch.search.aggregations.AggregationBuilder;
 import org.opensearch.search.aggregations.InternalAggregation;
 
 import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 
 /**
- * Base class for metric translators. Provides the common {@link #toAggregateCall}
- * logic — subclasses supply the SQL aggregate function, field name, and optionally
- * override the return type.
+ * Base class for simple metric translators (single value: AVG, SUM, MIN, MAX).
+ * Provides default implementations that wrap single-value results in singleton lists.
  */
 public abstract class AbstractMetricTranslator<T extends AggregationBuilder> implements MetricTranslator<T> {
 
@@ -41,15 +42,14 @@ public abstract class AbstractMetricTranslator<T extends AggregationBuilder> imp
     protected abstract String getFieldName(T agg);
 
     @Override
-    public AggregateCall toAggregateCall(T agg, RelDataType rowType) throws ConversionException {
+    public List<AggregateCall> toAggregateCalls(T agg, RelDataType rowType) throws ConversionException {
         String fieldName = getFieldName(agg);
         RelDataTypeField field = rowType.getField(fieldName, false, false);
         if (field == null) {
             throw new ConversionException("Aggregation field '" + fieldName + "' not found in schema");
         }
 
-        // Calcite enforces the return type to be same as input type; eg: AVG int→double coercion happens in response layer.
-        return AggregateCall.create(
+        AggregateCall call = AggregateCall.create(
             getAggFunction(),
             false,
             false,
@@ -60,16 +60,17 @@ public abstract class AbstractMetricTranslator<T extends AggregationBuilder> imp
             field.getType(),
             agg.getName()
         );
+        return Collections.singletonList(call);
     }
 
     @Override
-    public String getAggregateFieldName(T agg) {
-        return agg.getName();
+    public List<String> getAggregateFieldNames(T agg) {
+        return Collections.singletonList(agg.getName());
     }
 
     // TODO: implement response conversion per metric type (InternalAvg, InternalSum, etc.)
     @Override
-    public InternalAggregation toInternalAggregation(String name, Object value) {
+    public InternalAggregation toInternalAggregation(String name, Map<String, Object> values) {
         throw new UnsupportedOperationException("toInternalAggregation not yet implemented for " + getClass().getSimpleName());
     }
 }
