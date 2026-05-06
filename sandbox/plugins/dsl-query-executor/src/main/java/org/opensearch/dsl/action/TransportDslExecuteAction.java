@@ -77,35 +77,8 @@ public class TransportDslExecuteAction extends HandledTransportAction<SearchRequ
 
     @Override
     protected void doExecute(Task task, SearchRequest request, ActionListener<SearchResponse> listener) {
-        threadPool.executor(ThreadPool.Names.SEARCH).execute(() -> {
-            final QueryPlans plans;
-            final long convertTime;
-            try {
-                String indexName = resolveToSingleIndex(request);
-                long convertStart = System.nanoTime();
-                SearchSourceConverter converter = new SearchSourceConverter(engineContext.getSchema());
-                plans = converter.convert(request.source(), indexName);
-                convertTime = System.nanoTime() - convertStart;
-            } catch (Exception e) {
-                logger.error("DSL conversion failed", e);
-                listener.onFailure(e);
-                return;
-            }
-            planExecutor.execute(plans, ActionListener.wrap(results -> {
-                final SearchResponse response;
-                try {
-                    response = SearchResponseBuilder.build(results, convertTime);
-                } catch (Exception buildEx) {
-                    logger.error("DSL response building failed", buildEx);
-                    listener.onFailure(buildEx);
-                    return;
-                }
-                listener.onResponse(response);
-            }, e -> {
-                logger.error("DSL execution failed", e);
-                listener.onFailure(e);
-            }));
-        });
+        listener.onFailure(new UnsupportedOperationException("DSL is currently not supported. Please use PPL instead."));
+    }
     }
 
     // TODO: Consider delegating index resolution to Analytics Core plugin (e.g. via
