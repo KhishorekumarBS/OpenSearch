@@ -384,19 +384,61 @@ impl TieredObjectStore {
         path_str: &str,
         ranges: &[Range<u64>],
     ) -> (Vec<Option<Bytes>>, Vec<usize>, Vec<Range<u64>>) {
+        /// Cache chunk size: 8 MiB.
+        const CHUNK_SIZE: u64 = 8 << 20;
+
         let mut slots: Vec<Option<Bytes>> = Vec::with_capacity(ranges.len());
         let mut miss_indices: Vec<usize> = Vec::new();
         let mut miss_ranges: Vec<Range<u64>> = Vec::new();
 
         if let Some(ref cache) = self.cache {
+            let file_size = self.registry.get(path_str)
+                .map(|g| g.size())
+                .filter(|&s| s > 0)
+                .unwrap_or(0);
+
             for (i, r) in ranges.iter().enumerate() {
-                let key = range_cache_key(path_str, r.start, r.end);
-                if let Some(cached) = cache.get(&key).await {
-                    slots.push(Some(cached));
+                if file_size == 0 {
+                    // File size unknown — exact key, no alignment.
+                    let key = range_cache_key(path_str, r.start, r.end);
+                    if let Some(cached) = cache.get(&key).await {
+                        slots.push(Some(cached));
+                    } else {
+                        slots.push(None);
+                        miss_indices.push(i);
+                        miss_ranges.push(r.clone());
+                    }
                 } else {
-                    slots.push(None);
-                    miss_indices.push(i);
-                    miss_ranges.push(r.clone());
+                    // Align to 8 MiB chunk boundary.
+                    let chunk_start = r.start / CHUNK_SIZE * CHUNK_SIZE;
+                    let chunk_end = (chunk_start + CHUNK_SIZE).min(file_size);
+
+                    // If the range spans beyond this chunk, use exact key (no alignment).
+                    if r.end > chunk_end {
+                        let key = range_cache_key(path_str, r.start, r.end);
+                        if let Some(cached) = cache.get(&key).await {
+                            slots.push(Some(cached));
+                        } else {
+                            slots.push(None);
+                            miss_indices.push(i);
+                            miss_ranges.push(r.clone());
+                        }
+                    } else {
+                        let key = range_cache_key(path_str, chunk_start, chunk_end);
+
+                        if let Some(cached) = cache.get(&key).await {
+                            let offset = (r.start - chunk_start) as usize;
+                            let len = (r.end - r.start) as usize;
+                            slots.push(Some(cached.slice(offset..offset + len)));
+                        } else {
+                            slots.push(None);
+                            miss_indices.push(i);
+                            let chunk_range = chunk_start..chunk_end;
+                            if !miss_ranges.contains(&chunk_range) {
+                                miss_ranges.push(chunk_range);
+                            }
+                        }
+                    }
                 }
             }
         } else {
@@ -451,25 +493,57 @@ impl TieredObjectStore {
         }
     }
 
-    /// Phase 3 — populate the block cache with freshly fetched bytes and
-    /// reassemble the complete result in original range order.
+    /// Phase 3 — populate the block cache with fetched chunks and reassemble results.
     ///
-    /// If no cache is attached, only the slot reassembly is performed.
+    /// When a cache is attached and file_size is known, fetched data corresponds to
+    /// aligned chunks. Each chunk is cached under its aligned key, and each original
+    /// range is sliced from the corresponding chunk.
     fn populate_cache_and_reassemble(
         &self,
         path_str: &str,
+        ranges: &[Range<u64>],
         fetched: &[Bytes],
         miss_indices: &[usize],
         miss_ranges: &[Range<u64>],
         slots: &mut Vec<Option<Bytes>>,
     ) {
+        const CHUNK_SIZE: u64 = 8 << 20;
+
         if let Some(ref cache) = self.cache {
-            for (fetched_bytes, (&slot_i, miss_range)) in
-                fetched.iter().zip(miss_indices.iter().zip(miss_ranges.iter()))
-            {
-                let key = range_cache_key(path_str, miss_range.start, miss_range.end);
-                cache.put(&key, fetched_bytes.clone());
-                slots[slot_i] = Some(fetched_bytes.clone());
+            // Cache each fetched chunk/range.
+            for (data, mr) in fetched.iter().zip(miss_ranges.iter()) {
+                let key = range_cache_key(path_str, mr.start, mr.end);
+                cache.put(&key, data.clone());
+            }
+
+            let file_size = self.registry.get(path_str)
+                .map(|g| g.size())
+                .filter(|&s| s > 0)
+                .unwrap_or(0);
+
+            // Reassemble each missed slot.
+            for &slot_i in miss_indices {
+                let r = &ranges[slot_i];
+                if file_size == 0 {
+                    // No alignment — miss_ranges matches original ranges.
+                    if let Some(pos) = miss_ranges.iter().position(|mr| mr == r) {
+                        slots[slot_i] = Some(fetched[pos].clone());
+                    }
+                } else {
+                    // Try exact range match first (cross-boundary fallback).
+                    if let Some(pos) = miss_ranges.iter().position(|mr| mr == r) {
+                        slots[slot_i] = Some(fetched[pos].clone());
+                    } else {
+                        // Try aligned chunk match and slice.
+                        let chunk_start = r.start / CHUNK_SIZE * CHUNK_SIZE;
+                        let chunk_end = (chunk_start + CHUNK_SIZE).min(file_size);
+                        if let Some(pos) = miss_ranges.iter().position(|mr| mr.start == chunk_start && mr.end == chunk_end) {
+                            let offset = (r.start - chunk_start) as usize;
+                            let len = (r.end - r.start) as usize;
+                            slots[slot_i] = Some(fetched[pos].slice(offset..offset + len));
+                        }
+                    }
+                }
             }
         } else {
             for (fetched_bytes, &slot_i) in fetched.iter().zip(miss_indices.iter()) {
@@ -681,7 +755,7 @@ impl ObjectStore for TieredObjectStore {
         let fetched = self.fetch_misses(location, path_str, &miss_ranges).await?;
 
         self.populate_cache_and_reassemble(
-            path_str, &fetched, &miss_indices, &miss_ranges, &mut slots,
+            path_str, ranges, &fetched, &miss_indices, &miss_ranges, &mut slots,
         );
 
         Ok(slots.into_iter().map(|o| o.unwrap()).collect())

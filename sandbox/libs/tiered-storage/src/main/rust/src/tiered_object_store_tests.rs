@@ -951,3 +951,156 @@ async fn test_head_file_path_not_treated_as_directory() {
     // Not in registry, not local → NotFound
     assert!(result.is_err());
 }
+
+// -- Chunk-aligned caching tests -------------------------------------------
+
+use opensearch_block_cache::range_cache::{range_cache_key, CacheKey};
+use opensearch_block_cache::traits::BlockCache;
+use std::collections::HashMap;
+use std::pin::Pin;
+use std::sync::Mutex;
+
+/// Simple in-memory BlockCache for testing chunk caching behavior.
+#[derive(Debug)]
+struct MockBlockCache {
+    store: Mutex<HashMap<String, Bytes>>,
+}
+
+impl MockBlockCache {
+    fn new() -> Self {
+        Self { store: Mutex::new(HashMap::new()) }
+    }
+
+    fn len(&self) -> usize {
+        self.store.lock().unwrap().len()
+    }
+
+    fn keys(&self) -> Vec<String> {
+        self.store.lock().unwrap().keys().cloned().collect()
+    }
+}
+
+impl BlockCache for MockBlockCache {
+    fn as_any(&self) -> &dyn std::any::Any { self }
+
+    fn get<'a>(&'a self, key: &'a CacheKey)
+        -> Pin<Box<dyn std::future::Future<Output = Option<Bytes>> + Send + 'a>>
+    {
+        Box::pin(async move {
+            self.store.lock().unwrap().get(key.as_str()).cloned()
+        })
+    }
+
+    fn put(&self, key: &CacheKey, data: Bytes) {
+        self.store.lock().unwrap().insert(key.as_str().to_string(), data);
+    }
+
+    fn evict_prefix(&self, prefix: &str) {
+        self.store.lock().unwrap().retain(|k, _| !k.starts_with(prefix));
+    }
+
+    fn clear(&self) -> Pin<Box<dyn std::future::Future<Output = ()> + Send + '_>> {
+        Box::pin(async move { self.store.lock().unwrap().clear(); })
+    }
+}
+
+fn setup_with_cache() -> (
+    Arc<TieredStorageRegistry>,
+    Arc<InMemory>,
+    Arc<MockBlockCache>,
+    TieredObjectStore,
+) {
+    let registry = Arc::new(TieredStorageRegistry::new());
+    let local = Arc::new(InMemory::new());
+    let cache = Arc::new(MockBlockCache::new());
+    let tiered = TieredObjectStore::new(Arc::clone(&registry), Arc::clone(&local) as _)
+        .with_cache(Arc::clone(&cache) as _);
+    (registry, local, cache, tiered)
+}
+
+#[tokio::test]
+async fn test_chunk_alignment_subrange_hits_from_cached_chunk() {
+    let (registry, local, cache, tiered) = setup_with_cache();
+
+    // 16 MiB file (spans 2 chunks)
+    let file_size: u64 = 16 << 20;
+    let data = vec![0xABu8; file_size as usize];
+    local.put(&Path::from("f.parquet"), PutPayload::from(data.clone())).await.unwrap();
+    registry.register("f.parquet", TieredFileEntry::with_size(FileLocation::Local, None, file_size));
+
+    // First read: 0..100 — triggers fetch of aligned chunk 0..8MiB
+    let r1 = tiered.get_ranges(&Path::from("f.parquet"), &[0..100]).await.unwrap();
+    assert_eq!(r1[0].len(), 100);
+    assert_eq!(cache.len(), 1);
+
+    // Second read: 500..600 — same chunk, should be a cache hit (no new fetch)
+    let r2 = tiered.get_ranges(&Path::from("f.parquet"), &[500..600]).await.unwrap();
+    assert_eq!(r2[0].len(), 100);
+    assert_eq!(cache.len(), 1, "no new cache entry — served from existing chunk");
+}
+
+#[tokio::test]
+async fn test_chunk_alignment_multiple_ranges_same_chunk_deduplicates() {
+    let (registry, local, cache, tiered) = setup_with_cache();
+
+    let file_size: u64 = 16 << 20;
+    let data = vec![0xCDu8; file_size as usize];
+    local.put(&Path::from("g.parquet"), PutPayload::from(data)).await.unwrap();
+    registry.register("g.parquet", TieredFileEntry::with_size(FileLocation::Local, None, file_size));
+
+    // Request 3 ranges all within the same 8MiB chunk — only one chunk fetched
+    let results = tiered.get_ranges(&Path::from("g.parquet"), &[0..10, 1000..2000, 5_000_000..5_000_100]).await.unwrap();
+    assert_eq!(results[0].len(), 10);
+    assert_eq!(results[1].len(), 1000);
+    assert_eq!(results[2].len(), 100);
+    assert_eq!(cache.len(), 1, "only one chunk should be cached");
+}
+
+#[tokio::test]
+async fn test_chunk_alignment_file_size_unknown_uses_exact_keys() {
+    let (registry, local, cache, tiered) = setup_with_cache();
+
+    // Register file WITHOUT size (size = 0)
+    let data = vec![0xEFu8; 10000];
+    local.put(&Path::from("h.parquet"), PutPayload::from(data.clone())).await.unwrap();
+    registry.register("h.parquet", TieredFileEntry::new(FileLocation::Local, None));
+
+    // Read — should use exact key since file_size is unknown
+    let r = tiered.get_ranges(&Path::from("h.parquet"), &[0..100]).await.unwrap();
+    assert_eq!(r[0].len(), 100);
+
+    // Cache key should be exact: "h.parquet\x1F0-100"
+    let exact_key = range_cache_key("h.parquet", 0, 100);
+    assert!(cache.store.lock().unwrap().contains_key(exact_key.as_str()),
+        "should use exact key when file_size is unknown");
+}
+
+#[tokio::test]
+async fn test_chunk_alignment_spans_two_chunks_uses_exact_key() {
+    let (registry, local, cache, tiered) = setup_with_cache();
+
+    let file_size: u64 = 16 << 20;
+    let data: Vec<u8> = (0..file_size).map(|i| (i % 256) as u8).collect();
+    local.put(&Path::from("i.parquet"), PutPayload::from(data.clone())).await.unwrap();
+    registry.register("i.parquet", TieredFileEntry::with_size(FileLocation::Local, None, file_size));
+
+    // Request range spanning chunk boundary (8MiB-100 .. 8MiB+100)
+    // Falls back to exact key since it crosses chunk boundary
+    let boundary = 8u64 << 20;
+    let r = tiered.get_ranges(&Path::from("i.parquet"), &[boundary - 100..boundary + 100]).await.unwrap();
+    assert_eq!(r[0].len(), 200);
+    assert_eq!(cache.len(), 1, "cross-boundary range uses exact key — one cache entry");
+}
+
+#[tokio::test]
+async fn test_chunk_alignment_no_cache_passes_original_ranges() {
+    let (_registry, local, _remote, tiered) = setup();
+
+    let data = b"hello world 1234567890";
+    local.put(&Path::from("j.parquet"), PutPayload::from_static(data)).await.unwrap();
+
+    // No cache attached — should fetch exact original ranges
+    let r = tiered.get_ranges(&Path::from("j.parquet"), &[0..5, 6..11]).await.unwrap();
+    assert_eq!(r[0].as_ref(), b"hello");
+    assert_eq!(r[1].as_ref(), b"world");
+}
