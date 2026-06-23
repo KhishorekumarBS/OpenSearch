@@ -108,13 +108,13 @@ public class ShardBucketOversamplingIT extends AnalyticsRestTestCase {
 
     @SuppressWarnings("unchecked")
     private void assertRowCount(Map<String, Object> result, int expected) {
-        List<?> rows = (List<?>) result.get("rows");
+        List<?> rows = (List<?>) result.get("datarows");
         assertNotNull("response must have rows, got: " + result.keySet(), rows);
         assertEquals(expected, rows.size());
     }
 
     private Map<String, Object> executePPL(String ppl) throws Exception {
-        Request request = new Request("POST", "/_analytics/ppl");
+        Request request = new Request("POST", "/_plugins/_ppl");
         request.setJsonEntity("{\"query\": \"" + ppl + "\"}");
         Response response = client().performRequest(request);
         return entityAsMap(response);

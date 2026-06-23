@@ -56,14 +56,14 @@ public class PatternsCommandIT extends AnalyticsRestTestCase {
     }
 
     public void testSimplePatternLabelMode() throws IOException {
-        Map<String, Object> response = executePplViaShim(
+        Map<String, Object> response = executePpl(
             "source=" + DATASET.indexName
                 + " | patterns message method=simple_pattern mode=label"
                 + " | fields patterns_field"
         );
         @SuppressWarnings("unchecked")
-        List<List<Object>> rows = (List<List<Object>>) response.get("rows");
-        assertNotNull("Response missing 'rows'", rows);
+        List<List<Object>> rows = (List<List<Object>>) response.get("datarows");
+        assertNotNull("Response missing 'datarows'", rows);
         assertEquals("label mode preserves row count", 200, rows.size());
         for (int i = 0; i < rows.size(); i++) {
             Object v = rows.get(i).get(0);
@@ -76,14 +76,14 @@ public class PatternsCommandIT extends AnalyticsRestTestCase {
     @AwaitsFix(bugUrl = "patterns mode=aggregation auto-generates take(message, 10) but the literal 10 resolves to UNDEFINED in the PPL type checker: 'Aggregation function TAKE expects {[ANY]|[ANY,INTEGER]}, but got [STRING,UNDEFINED]'. Frontend type-resolution bug in the patterns-aggregation lowering (unified-query / CalciteRelNodeVisitor.visitPatterns), surfaced by the upstream BRAIN/SIMPLE patterns merge. Explicit take(message,1) works (see sibling testSimplePatternAggregationGroupByServiceMultiShard); only the auto-generated N is mistyped. Needs an opensearch-sql fix, out of scope for analytics-engine.")
     public void testSimplePatternAggregationModeMultiShard() throws IOException {
         ensureMultiShardProvisioned();
-        Map<String, Object> response = executePplViaShim(
+        Map<String, Object> response = executePpl(
             "source=" + DATASET_MULTI.indexName
                 + " | patterns message method=simple_pattern mode=aggregation"
                 + " | fields patterns_field, pattern_count, sample_logs"
         );
         @SuppressWarnings("unchecked")
-        List<List<Object>> rows = (List<List<Object>>) response.get("rows");
-        assertNotNull("Response missing 'rows'", rows);
+        List<List<Object>> rows = (List<List<Object>>) response.get("datarows");
+        assertNotNull("Response missing 'datarows'", rows);
         assertTrue("Expected at least one cluster", rows.size() >= 1);
         long total = 0;
         for (int i = 0; i < rows.size(); i++) {
@@ -108,7 +108,7 @@ public class PatternsCommandIT extends AnalyticsRestTestCase {
 
     public void testSimplePatternAggregationGroupByServiceMultiShard() throws IOException {
         ensureMultiShardProvisioned();
-        Map<String, Object> response = executePplViaShim(
+        Map<String, Object> response = executePpl(
             "source=" + DATASET_MULTI.indexName
                 + " | patterns message method=simple_pattern mode=label"
                 + " | stats count() as c, take(message, 1) as sample_logs"
@@ -116,8 +116,8 @@ public class PatternsCommandIT extends AnalyticsRestTestCase {
                 + " | fields patterns_field, service_name, c, sample_logs"
         );
         @SuppressWarnings("unchecked")
-        List<List<Object>> rows = (List<List<Object>>) response.get("rows");
-        assertNotNull("Response missing 'rows'", rows);
+        List<List<Object>> rows = (List<List<Object>>) response.get("datarows");
+        assertNotNull("Response missing 'datarows'", rows);
         assertTrue("Expected at least one (pattern, service) group", rows.size() >= 1);
         long total = 0;
         for (int i = 0; i < rows.size(); i++) {

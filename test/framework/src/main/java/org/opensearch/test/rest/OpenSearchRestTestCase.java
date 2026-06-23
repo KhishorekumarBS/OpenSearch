@@ -213,11 +213,16 @@ public abstract class OpenSearchRestTestCase extends OpenSearchTestCase {
             adminClient = buildClient(restAdminSettings(), clusterHosts.toArray(new HttpHost[0]));
 
             nodeVersions = new TreeSet<>();
-            Map<?, ?> response = entityAsMap(adminClient.performRequest(new Request("GET", "_nodes/plugins")));
-            Map<?, ?> nodes = (Map<?, ?>) response.get("nodes");
-            for (Map.Entry<?, ?> node : nodes.entrySet()) {
-                Map<?, ?> nodeInfo = (Map<?, ?>) node.getValue();
-                nodeVersions.add(Version.fromString(nodeInfo.get("version").toString()));
+            try {
+                Map<?, ?> response = entityAsMap(adminClient.performRequest(new Request("GET", "_nodes/plugins")));
+                Map<?, ?> nodes = (Map<?, ?>) response.get("nodes");
+                for (Map.Entry<?, ?> node : nodes.entrySet()) {
+                    Map<?, ?> nodeInfo = (Map<?, ?>) node.getValue();
+                    nodeVersions.add(Version.fromString(nodeInfo.get("version").toString()));
+                }
+            } catch (Exception e) {
+                logger.warn("Failed to get _nodes/plugins (managed cluster?): " + e.getMessage());
+                nodeVersions.add(Version.CURRENT);
             }
         }
         assert client != null;

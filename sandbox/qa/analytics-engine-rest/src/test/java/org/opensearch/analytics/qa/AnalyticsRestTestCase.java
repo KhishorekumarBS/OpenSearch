@@ -8,19 +8,32 @@
 
 package org.opensearch.analytics.qa;
 
+import org.apache.hc.client5.http.impl.nio.PoolingAsyncClientConnectionManagerBuilder;
+import org.apache.hc.client5.http.ssl.ClientTlsStrategyBuilder;
+import org.apache.hc.core5.http.nio.ssl.TlsStrategy;
+import org.apache.hc.core5.http2.HttpVersionPolicy;
+import org.apache.hc.core5.reactor.ssl.TlsDetails;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.junit.Before;
 import org.opensearch.client.Request;
 import org.opensearch.client.Response;
+import org.opensearch.client.RestClient;
+import org.opensearch.client.RestClientBuilder;
+import org.opensearch.common.settings.Settings;
+import org.opensearch.common.util.concurrent.ThreadContext;
 import org.opensearch.test.rest.OpenSearchRestTestCase;
+
+import javax.net.ssl.SSLContext;
 
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -37,6 +50,52 @@ import java.util.stream.Collectors;
 public abstract class AnalyticsRestTestCase extends OpenSearchRestTestCase {
 
     protected static final Logger logger = LogManager.getLogger(AnalyticsRestTestCase.class);
+
+    @Override
+    protected String getProtocol() {
+        return System.getProperty("tests.rest.https", "false").equals("true") ? "https" : "http";
+    }
+
+    @Override
+    protected Settings restClientSettings() {
+        Settings.Builder builder = Settings.builder();
+        if (System.getProperty("tests.rest.client_path_prefix") != null) {
+            builder.put(CLIENT_PATH_PREFIX, System.getProperty("tests.rest.client_path_prefix"));
+        }
+        String user = System.getProperty("tests.rest.user");
+        String pass = System.getProperty("tests.rest.password");
+        if (user != null && pass != null) {
+            String token = Base64.getEncoder().encodeToString((user + ":" + pass).getBytes(StandardCharsets.UTF_8));
+            builder.put(ThreadContext.PREFIX + ".Authorization", "Basic " + token);
+        }
+        return builder.build();
+    }
+
+    @Override
+    protected RestClient buildClient(Settings settings, org.apache.hc.core5.http.HttpHost[] hosts) throws IOException {
+        if ("https".equals(getProtocol())) {
+            RestClientBuilder builder = RestClient.builder(hosts);
+            try {
+                SSLContext sslContext = SSLContext.getInstance("TLS");
+                sslContext.init(null, null, new SecureRandom());
+                final TlsStrategy tlsStrategy = ClientTlsStrategyBuilder.create()
+                    .setSslContext(sslContext)
+                    .setTlsDetailsFactory(sslEngine -> new TlsDetails(sslEngine.getSession(), sslEngine.getApplicationProtocol()))
+                    .build();
+                builder.setHttpClientConfigCallback(httpClientBuilder -> httpClientBuilder
+                    .setVersionPolicy(HttpVersionPolicy.FORCE_HTTP_1)
+                    .setConnectionManager(
+                        PoolingAsyncClientConnectionManagerBuilder.create().setTlsStrategy(tlsStrategy).build()
+                    ));
+            } catch (Exception e) {
+                throw new IOException("Failed to configure SSL", e);
+            }
+            configureClient(builder, settings);
+            builder.setStrictDeprecationMode(true);
+            return builder.build();
+        }
+        return super.buildClient(settings, hosts);
+    }
 
     @Override
     protected boolean preserveClusterUponCompletion() {

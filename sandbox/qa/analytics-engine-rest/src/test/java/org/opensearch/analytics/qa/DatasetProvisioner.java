@@ -61,11 +61,13 @@ public final class DatasetProvisioner {
      * coverage of planner paths (exchange insertion, sort split, etc.).
      */
     private static void provisionIndex(RestClient client, Dataset dataset, String indexName, int numberOfShards) throws IOException {
-        // Delete if exists
+        // Skip if index already exists (pre-ingested for warm/managed testing)
         try {
-            client.performRequest(new Request("DELETE", "/" + indexName));
+            client.performRequest(new Request("HEAD", "/" + indexName));
+            logger.info("Index [{}] already exists — skipping provisioning", indexName);
+            return;
         } catch (Exception e) {
-            // index may not exist — ignore
+            // index does not exist — proceed with creation
         }
 
         // Load mapping, inject parquet settings, create index

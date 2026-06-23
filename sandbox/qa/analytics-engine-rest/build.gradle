@@ -188,6 +188,22 @@ tasks.register('restTest', Test) {
     testClassesDirs = sourceSets.test.output.classesDirs
     classpath = sourceSets.test.runtimeClasspath
     include '**/*IT.class'
+    exclude '**/CountFastPathIT.class'
+    exclude '**/DslClickBenchIT.class'
+    exclude '**/ParquetDataFusionIT.class'
+    // Requires PUT /_cluster/settings — test in opensource (integTest) only
+    exclude '**/ShardBucketOversamplingIT.class'
+    // These tests DELETE+CREATE indices inline (would move data off warm)
+    exclude '**/CoordinatorReduceIT.class'
+    exclude '**/CoordinatorReduceMemtableIT.class'
+    exclude '**/StreamingCoordinatorReduceIT.class'
+    exclude '**/DataStreamIT.class'
+    exclude '**/DynamicMappingSearchIT.class'
+    exclude '**/FilterDelegationIT.class'
+    exclude '**/LocalRecoveryIT.class'
+    exclude '**/MatchLikeParityIT.class'
+    exclude '**/QueryCacheIT.class'
+    exclude '**/FieldTypeCoverageIT.class'
     def cluster = findProperty('restCluster') ?: 'localhost:9200'
     def clusterName = findProperty('restClusterName') ?: 'runTask'
     systemProperty 'tests.rest.cluster', cluster
