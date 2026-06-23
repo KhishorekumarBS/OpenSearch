@@ -46,6 +46,9 @@ public abstract class PPLIntegTestCase extends SQLIntegTestCase {
   @Override
   protected void init() throws Exception {
     super.init();
+    if ("true".equals(System.getProperty("tests.managed.cluster"))) {
+      return;
+    }
     updatePushdownSettings();
     disableCalcite(); // calcite is enabled by default from 3.3.0
   }
@@ -188,6 +191,7 @@ public abstract class PPLIntegTestCase extends SQLIntegTestCase {
   }
 
   protected static JSONObject updateClusterSettings(ClusterSetting setting) throws IOException {
+    if ("true".equals(System.getProperty("tests.managed.cluster"))) { return new org.json.JSONObject(); }
     Request request = new Request("PUT", "/_cluster/settings");
     String persistentSetting =
         String.format(

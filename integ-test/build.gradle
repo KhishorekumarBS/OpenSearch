@@ -1028,6 +1028,15 @@ task integTestRemote(type: RestIntegTestTask) {
     if (System.getProperty("tests.analytics.parquet_indices") != null) {
         systemProperty 'tests.analytics.parquet_indices', System.getProperty("tests.analytics.parquet_indices")
     }
+    if (System.getProperty("tests.keep.data") != null) {
+        systemProperty 'tests.keep.data', System.getProperty("tests.keep.data")
+    }
+    if (System.getProperty("tests.rest.client_path_prefix") != null) {
+        systemProperty 'tests.rest.client_path_prefix', System.getProperty("tests.rest.client_path_prefix")
+    }
+    if (System.getProperty("tests.managed.cluster") != null) {
+        systemProperty 'tests.managed.cluster', System.getProperty("tests.managed.cluster")
+    }
 
     // Set default query size limit
     systemProperty 'defaultQuerySizeLimit', '10000'

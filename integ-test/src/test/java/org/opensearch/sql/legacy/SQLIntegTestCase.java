@@ -175,6 +175,7 @@ public abstract class SQLIntegTestCase extends OpenSearchSQLRestTestCase {
 
   protected static void wipeAllClusterSettings() throws IOException {
     updateClusterSettings(new ClusterSetting("persistent", "*", null));
+    if ("true".equals(System.getProperty("tests.managed.cluster"))) { return; }
     updateClusterSettings(new ClusterSetting("transient", "*", null));
     if (remoteClient() != null) {
       updateClusterSettings(new ClusterSetting("persistent", "*", null), remoteClient());
@@ -193,6 +194,9 @@ public abstract class SQLIntegTestCase extends OpenSearchSQLRestTestCase {
 
   /** Provide for each test to load test index, data and other setup work */
   protected void init() throws Exception {
+    if ("true".equals(System.getProperty("tests.managed.cluster"))) {
+      return;
+    }
     disableCalcite();
     increaseMaxCompilationsRate();
   }
@@ -392,6 +396,7 @@ public abstract class SQLIntegTestCase extends OpenSearchSQLRestTestCase {
 
   protected static JSONObject updateClusterSettings(ClusterSetting setting, RestClient client)
       throws IOException {
+    if ("true".equals(System.getProperty("tests.managed.cluster"))) { return new org.json.JSONObject(); }
     Request request = new Request("PUT", "/_cluster/settings");
     String persistentSetting =
         String.format(
@@ -404,6 +409,7 @@ public abstract class SQLIntegTestCase extends OpenSearchSQLRestTestCase {
   }
 
   protected static JSONObject updateClusterSettings(ClusterSetting setting) throws IOException {
+    if ("true".equals(System.getProperty("tests.managed.cluster"))) { return new org.json.JSONObject(); }
     return updateClusterSettings(setting, client());
   }
 

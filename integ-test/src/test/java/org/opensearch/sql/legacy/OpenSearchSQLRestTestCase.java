@@ -58,6 +58,7 @@ import org.opensearch.test.rest.OpenSearchRestTestCase;
  */
 public abstract class OpenSearchSQLRestTestCase extends OpenSearchRestTestCase {
 
+
   private static final Logger LOG = LogManager.getLogger();
   public static final String MATCH_ALL_REMOTE_CLUSTER = "*";
   // Requires to insert cluster name and cluster transport address (host:port)
