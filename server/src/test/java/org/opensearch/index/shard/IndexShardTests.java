@@ -5687,7 +5687,7 @@ public class IndexShardTests extends IndexShardTestCase {
 
             // Use a very short timeout so the test doesn't take 30s
             IOException ex = expectThrows(IOException.class, () -> spyShard.waitForReplicaSync(TimeValue.timeValueMillis(600)));
-            assertThat(ex.getMessage(), containsString("replicas failed to sync within"));
+            assertThat(ex.getMessage(), containsString(IndexShard.REPLICA_SYNC_TIMEOUT_MARKER));
             assertThat(ex.getMessage(), containsString("max checkpoints behind: 3"));
         } finally {
             closeShards(shard);

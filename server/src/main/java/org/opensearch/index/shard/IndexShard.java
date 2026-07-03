@@ -2746,9 +2746,13 @@ public class IndexShard extends AbstractIndexShardComponent implements IndicesCl
             }
         }
         throw new IOException(
-            "Failed to upload to remote segment store within remote upload timeout of "
+            "Shard ["
+                + shardId
+                + "] "
+                + REMOTE_STORE_SYNC_TIMEOUT_MARKER
+                + " ("
                 + getRecoverySettings().internalRemoteUploadTimeout().getMinutes()
-                + " minutes"
+                + " minutes)"
         );
     }
 
@@ -3850,7 +3854,13 @@ public class IndexShard extends AbstractIndexShardComponent implements IndicesCl
      * in mixed-version clusters or log parsing, analogous to
      * {@link org.opensearch.storage.action.tiering.MergeDrainTimeoutException#MERGE_DRAIN_TIMEOUT_MARKER}.
      */
-    public static final String REPLICA_SYNC_TIMEOUT_MARKER = "[REPLICA_SYNC_TIMEOUT]";
+    public static final String REPLICA_SYNC_TIMEOUT_MARKER = "replicas failed to sync within timeout";
+
+    /**
+     * Stable marker substring embedded in remote store sync timeout messages.
+     * Enables log parsing and coordinator-side detection of upload timeouts during tiering preparation.
+     */
+    public static final String REMOTE_STORE_SYNC_TIMEOUT_MARKER = "failed to upload to remote segment store within timeout";
 
     /**
      * Waits for all tracked replicas to be in sync with the primary's latest checkpoint.
@@ -3902,12 +3912,13 @@ public class IndexShard extends AbstractIndexShardComponent implements IndicesCl
         long maxBehind = stats.stream().mapToLong(SegmentReplicationShardStats::getCheckpointsBehindCount).max().orElse(0);
         long maxBytes = stats.stream().mapToLong(SegmentReplicationShardStats::getBytesBehindCount).max().orElse(0);
         throw new IOException(
-            REPLICA_SYNC_TIMEOUT_MARKER
-                + " Shard ["
+            "Shard ["
                 + shardId
-                + "] replicas failed to sync within "
+                + "] "
+                + REPLICA_SYNC_TIMEOUT_MARKER
+                + " ("
                 + timeout
-                + ". Replicas still behind: "
+                + "). Replicas still behind: "
                 + behindCount
                 + ", max checkpoints behind: "
                 + maxBehind
